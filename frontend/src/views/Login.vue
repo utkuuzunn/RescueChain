@@ -10,7 +10,7 @@ const errorMsg = ref('')
 const isLoading = ref(false)
 
 // IP ADRESİNİ GÜNCELLE!
-const API_URL = 'http://192.168.217.129:5000/api/login'
+const API_URL = 'http://192.168.217.130:5000/api/login'
 
 const handleLogin = async () => {
   errorMsg.value = ''

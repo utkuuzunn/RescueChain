@@ -14,6 +14,9 @@ const activeTab = ref('incoming') // Varsayılan sekme: Gelen Kutusu
 // Veriler
 const warehouses = ref([]) // Hedef depo seçimi için
 const incomingTransfers = ref([]) // Onay bekleyenler
+const outgoingTransfers = ref([])
+const inventory = ref([])
+const cart = ref([])
 const message = ref('')
 const errorMsg = ref('')
 
@@ -22,10 +25,8 @@ const stockForm = ref({ item_name: 'Su (Koli)', quantity: 10 })
 const transferForm = ref({ target_id: '', item_name: 'Su (Koli)', quantity: 10 })
 
 // IP ADRESİNİ GÜNCELLE!
-const API_BASE = 'http://192.168.217.129:5000/api'
+const API_BASE = 'http://192.168.217.130:5000/api'
 
-const outgoingTransfers = ref([])
-const inventory = ref([])
 
 // Verileri Yükle
 const loadData = async () => {
@@ -68,19 +69,43 @@ const submitStockIn = async () => {
 }
 
 // 2. Transfer Başlat (Gönder)
+
+const addToCart = () => {
+  const { item_name, quantity } = transferForm.value
+  
+  if (quantity <= 0) return showError("Miktar 0 olamaz!")
+
+  const existing = cart.value.find(i => i.item_name === item_name)
+  if (existing) {
+    existing.quantity += quantity
+  } else {
+    cart.value.push({ item_name, quantity })
+  }
+
+  transferForm.value.quantity = 10
+}
+
+const removeFromCart = (index) => {
+  cart.value.splice(index, 1)
+}
+
 const startTransfer = async () => {
   if(!transferForm.value.target_id) return showError("Lütfen hedef depo seçin!")
+  if(cart.value.length === 0) return showError("Transfer için lütfen ürün ekleyin.")
   
   try {
     await axios.post(`${API_BASE}/transfer/start`, {
       user_id: userId,
       source_id: warehouseId,
-      ...transferForm.value
+      target_id: transferForm.value.target_id,
+      items: cart.value // Tüm listeyi gönderiyoruz
     })
-    showMessage('🚚 Transfer Başlatıldı! Stoktan düşüldü.')
-    loadData() // Listeleri güncelle
+    
+    showMessage(`🚚 ${cart.value.length} kalem ürün yola çıktı!`)
+    cart.value = [] // Sepeti temizle
+    loadData() 
   } catch (e) {
-    showError(e.response?.data?.error || 'Yetersiz Stok veya Hata')
+    showError(e.response?.data?.error || 'Hata oluştu')
   }
 }
 
@@ -179,7 +204,7 @@ const showError = (msg) => { errorMsg.value = msg; setTimeout(() => errorMsg.val
     
 
     <div v-if="activeTab === 'transfer'" class="card">
-      <h3>🚚 Başka Depoya Ürün Gönder</h3>
+      <h3>🚚 Çoklu Transfer Oluştur</h3>
       
       <div class="form-group">
         <label>Hedef Depo:</label>
@@ -189,25 +214,42 @@ const showError = (msg) => { errorMsg.value = msg; setTimeout(() => errorMsg.val
         </select>
       </div>
       
-      <div class="form-group">
-        <label>Gönderilecek Ürün:</label>
-        <select v-model="transferForm.item_name">
-          <option>Su (Koli)</option>
-          <option>Konserve Gıda (Koli)</option>
-          <option>Battaniye</option>
-          <option>Çadır</option>
-          <option>Uyku Tulumu</option>
-          <option>Isıtıcı</option>
-          <option>Jeneratör</option>
-          <option>İlk Yardım Çantası</option>
-          <option>Tıbbi Malzeme (İlaç vb.)</option>
-          <option>Kıyafet</option>
-        </select>
-        <input type="number" v-model="transferForm.quantity" min="1" placeholder="Adet">
+      <div class="cart-builder">
+        <div class="cart-input">
+          <label>Ürün:</label>
+          <select v-model="transferForm.item_name">
+            <option>Su (Koli)</option><option>Konserve Gıda (Koli)</option>
+            <option>Battaniye</option><option>Çadır</option>
+            <option>Uyku Tulumu</option><option>Isıtıcı</option>
+            <option>Jeneratör</option><option>İlk Yardım Çantası</option>
+            <option>Tıbbi Malzeme (İlaç vb.)</option><option>Kıyafet</option>
+          </select>
+        </div>
+
+        <div class="cart-input small">
+          <label>Adet:</label>
+          <input type="number" v-model="transferForm.quantity" min="1">
+        </div>
+
+        <button class="add-btn" @click="addToCart">➕ EKLE</button>
       </div>
-      
-      <button class="action-btn orange" @click="startTransfer">TRANSFERİ BAŞLAT</button>
-      <small class="hint">* Onaylanana kadar "Yolda" görünecektir.</small>
+
+      <div v-if="cart.length > 0" class="cart-list">
+        <h4>📦 Gönderilecek Paket</h4>
+        <ul>
+          <li v-for="(item, index) in cart" :key="index">
+            <span>{{ item.quantity }} x {{ item.item_name }}</span>
+            <button @click="removeFromCart(index)" class="remove-btn">🗑️</button>
+          </li>
+        </ul>
+        <button class="action-btn orange" @click="startTransfer">
+          TÜMÜNÜ TRANSFER ET
+        </button>
+      </div>
+
+      <div v-else class="empty-cart-hint">
+        Listeye ürün eklemek için yukarıdaki "Ekle" butonunu kullanın.
+      </div>
 
       <hr class="divider">
 
@@ -375,5 +417,64 @@ select, input { width: 100%; padding: 12px; margin-top: 5px; background: #181825
 .transfer-info small {
   color: #aaa;
   font-size: 0.75rem;
+}
+
+.cart-builder {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  background: #1e1e2e;
+  padding: 15px;
+  border-radius: 8px;
+  border: 1px solid #444;
+}
+
+.cart-input { flex: 2; }
+.cart-input.small { flex: 1; }
+
+.add-btn {
+  padding: 12px 20px;
+  background: #3498db;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  font-weight: bold;
+  height: 42px; /* Inputlarla aynı hiza */
+}
+
+.cart-list {
+  margin-top: 15px;
+  background: #2a2a3c;
+  padding: 15px;
+  border-radius: 8px;
+  border: 1px dashed #555;
+}
+
+.cart-list ul {
+  list-style: none;
+  padding: 0;
+  margin-bottom: 15px;
+}
+
+.cart-list li {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px;
+  border-bottom: 1px solid #444;
+  color: #fff;
+}
+
+.remove-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+}
+
+.empty-cart-hint {
+  text-align: center;
+  color: #777;
+  margin: 20px 0;
+  font-style: italic;
 }
 </style>
